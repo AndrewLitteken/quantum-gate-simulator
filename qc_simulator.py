@@ -1,10 +1,5 @@
 import numpy as np
 import itertools
-from scipy import linalg
-
-
-# TODO: Can speed up change of qstate after single qbit measurements by simple formulation
-# TODO: a00 |00> + a01 |01> / (sqrt(|a00|^2 + |a01|^2)
 
 class InputError(Exception):
     pass
@@ -26,6 +21,7 @@ class QBit:
 
     @state.setter
     def state(self, value):
+        print(value)
         if value not in ['0', '1']:
             print("can't set qbit")
             return
@@ -47,6 +43,7 @@ class QBit:
 
         for c in self._observers:
             c()
+        print(self.vector)
 
     def __getitem__(self, item):
         if item not in ['0', '1']:
@@ -59,9 +56,6 @@ class QBit:
 
     def bind_to(self, callback):
         self._observers.append(callback)
-
-    def __len__(self):
-        return 1
 
 
 class QState:
@@ -129,23 +123,17 @@ class QState:
     @vector.setter
     # TODO: Concern with updating here!
     def vector(self, new_state):
-        # print(new_state)
         self._vector = new_state
 
-        solve_coefficients(len(self), new_state)
-
-        # sums = [[0, 0] * len(self)]
-        # for i in range(2 ** len(self)):
-        #     pass
-        # for i in range(len(self)):
-        #     sums = [0, 0]
-        #     which = 0
-        #     for j in range(2 ** len(self)):
-        #         if j != 0 and j % (2 ** i) == 0:
-        #             which = (which + 1) % 2
-        #         sums[which] += float(new_state[j][0])
-        #         j += 1
-        #     self._bits[len(self) - 1 - i].vector = np.matrix([[sums[0]], [sums[1]]])
+        for i in range(len(self)):
+            sums = [0, 0]
+            which = 0
+            for j in range(2 ** len(self)):
+                if j != 0 and j % (2 ** i) == 0:
+                    which = (which + 1) % 2
+                sums[which] += float(new_state[j][0])
+                j += 1
+            self._bits[len(self) - 1 - i].vector = np.matrix([[sums[0]], [sums[1]]])
 
     def __str__(self):
         return str(self.vector)
@@ -155,22 +143,15 @@ def measure(state):
     if type(state) is QBit:
         state.state = str(np.random.choice(np.arange(0, 2), p=[float(x) ** 2 for x in state.vector]))
     elif type(state) is QState:
-        choice = str(np.random.choice(np.arange(0, len(state) ** 2), p=[float(x[0]) ** 2 for x in state.vector]))
-        state.vector = [[(lambda x: 0 if x == choice else 1)(x)] for x in list(itertools.product(['0', '1'],
-                                                                                                 repeat=len(state)))]
+        pass
 
 
-def hadamard(q_input):
-    length = 2 ** len(q_input)
-    # T = linalg.hadamard(length)
-    # q_input.vector = np.dot(T, q_input.vector)
-
-    T = np.zeros((length, length))
-    for i in range(length):
-        for j in range(length):
-            T[i][j] = 1/(2 ** (len(q_input)/2)) * (-1) ** (i * j)
-    print(T)
-    q_input.vector = np.dot(T, q_input.vector)
+def hadamard(qbit: QBit):
+    T = np.zeros((2, 2))
+    for i in range(2):
+        for j in range(2):
+            T[i][j] = 1/(2 ** (1/2)) * (-1) ** (i * j)
+    qbit.vector = np.dot(T, qbit.vector)
 
 
 def pauli_x(qbit: QBit):
@@ -207,95 +188,33 @@ def Toffoli(qstate: QState):
     qstate.vector = np.dot(T, qstate.vector)
 
 
-def build_p_vec(qbit: QBit, index, length):
-    v0 = []
-    w = 0
-    for i in range(2 ** length):
-        if i != 0 and i % 2 ** (length - index - 1) == 0:
-            w = (w + 1) % 2
-        v0.append([float(qbit.vector[w][0])])
-    return v0
+#q = QBit('0')
+#print(q)
+#hadamard(q)
+#print(q)
+#hadamard(q)
+#print(q)
+#pauli_x(q)
+#print(q)
+#print("///////")
+#q = QBit('0')
+#hadamard(q)
+#measure(q)
+#print(q)
+#print("//////")
+#q1 = QBit('0')
+#q2 = QBit('0')
+#q3 = QBit('1')
+#hadamard(q1)
+#hadamard(q2)
+#qs = QState([q1, q2, q3])
+#print(qs)
+#lnot(qs[2])
+#print(qs)
+#Toffoli(qs)
+#print(qs)
 
-
-def build_t_vectors(qstate: QState):
-    pvectors = []
-    for i in range(len(qstate)):
-        pvectors.append(build_p_vec(qstate[i], i, len(qstate)))
-    return pvectors
-
-
-def solve_coefficients(num_input_bits, gate_result):
-    """Gate result: a vector containing the output values \alpha, \beta, ..."""
-
-    # Series of equations := {(q1_0, q2_0, q3_0): gate_result[0],
-    #                         (q1_0, q2_0, q3_1): gate_result[1],
-    #                           ...
-    #                         (q1_1, q2_1, q3_1): gate_result[2 ** num_inputs]}
-
-    # Find which are 0's; construct the matrix to solve later of the nonzero ones
-    A = np.zeros((2 ** num_input_bits, 2 * num_input_bits))
-    rows_to_delete = []
-
-    zero = set()
-    not_zero = set()
-    w = [0] * num_input_bits
-    for k in range(2 ** num_input_bits):
-        for i in range(len(w)):
-            if k != 0 and k % 2 ** (num_input_bits - i - 1) == 0:
-                w[i] = (w[i] + 1) % 2
-            s = str(i) + str(w[i])
-
-            A[k][2 * i + w[i]] = 1
-
-            if gate_result[k][0] == 0:
-                rows_to_delete.append(k)
-                if s not in not_zero:
-                    zero.add(s)
-            else:
-                if s in zero:
-                    zero.remove(s)
-
-                not_zero.add(s)
-
-    solution = {}
-
-    A = np.delete(A, obj=rows_to_delete, axis=0)
-    gate_result = np.delete(gate_result, rows_to_delete, 0)
-
-    print(A)
-    print(gate_result)
-    for ele in zero:
-        solution[ele] = 0
-        solution[ele[:-1] + str((int(ele[-1]) + 1) % 2)] = 1
-
-    if len(solution) == 2 * num_input_bits:
-        print(solution)
-        return solution
-
-    print(solution)
-
-
-"""TODO: NEED TO KEEP WORKING ON SOLVING FOR HOW IT CHANGES EACH INDIVIDUAL BIT"""
-
-q1 = QBit('0')
-q2 = QBit('1')
-q3 = QBit('1')
-q4 = QBit('0')
-q5 = QBit('1')
-q6 = QBit('1')
-
-qs = QState([q1, q2, q3])
-qs2 = QState([q4, q5, q6])
-
-# test_tof(qs2)
-
-Toffoli(qs)
-# print(qs.vector == qs2.vector)
-
-
-# measure(qs)
-# print(qs)
-
+#
 
 """
 class QState:
